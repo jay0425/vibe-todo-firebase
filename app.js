@@ -1,30 +1,6 @@
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js';
-import {
-  getDatabase,
-  ref,
-  push,
-  set,
-  remove,
-  update,
-  onValue,
-} from 'https://www.gstatic.com/firebasejs/12.2.1/firebase-database.js';
-
-const firebaseConfig = {
-  apiKey: 'AIzaSyBpHsDFu0smL10teiPwfGylCTMQ46T4qpY',
-  authDomain: 'todo-backend-26aed.firebaseapp.com',
-  projectId: 'todo-backend-26aed',
-  storageBucket: 'todo-backend-26aed.firebasestorage.app',
-  messagingSenderId: '399523240057',
-  appId: '1:399523240057:web:ec7ca67e7fd92d263d1ca8',
-  measurementId: 'G-Z42CECZWXD',
-  databaseURL: 'https://todo-backend-26aed-default-rtdb.firebaseio.com/',
-};
-
-// Firebase 초기화
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
-
 (() => {
+  const API_URL = 'http://localhost:5001/todos'; // ✅ 백엔드 주소
+
   /** @type {HTMLFormElement} */
   const form = document.getElementById('todo-form');
   /** @type {HTMLInputElement} */
@@ -32,27 +8,99 @@ const db = getDatabase(app);
   /** @type {HTMLUListElement} */
   const list = document.getElementById('todo-list');
 
-  /** @typedef {{ id:string, text:string, completed:boolean, createdAt:number, updatedAt:number }} Todo */
-  /** @type {Record<string, Todo>} */
-  let todos = {};
+  /** @typedef {{ _id:string, title:string, description?:string, isCompleted:boolean, createdAt:string }} Todo */
+  /** @type {Todo[]} */
+  let todos = [];
 
+  // ✅ 할 일 불러오기 (Read)
+  async function loadTodos() {
+    try {
+      const res = await fetch(API_URL);
+      todos = await res.json();
+      render();
+    } catch (e) {
+      console.error('할 일 불러오기 실패 ❌', e);
+    }
+  }
+
+  // ✅ 할 일 추가 (Create)
+  async function addTodo(text) {
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: text }),
+      });
+      const newTodo = await res.json();
+      todos.unshift(newTodo);
+      render();
+    } catch (e) {
+      console.error('할 일 추가 실패 ❌', e);
+    }
+  }
+
+  // ✅ 할 일 완료 토글 (Update)
+  async function toggleTodo(id, completed) {
+    try {
+      const res = await fetch(`${API_URL}/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isCompleted: completed }),
+      });
+      const updated = await res.json();
+      todos = todos.map((t) => (t._id === id ? updated : t));
+      render();
+    } catch (e) {
+      console.error('할 일 수정 실패 ❌', e);
+    }
+  }
+
+  // ✅ 할 일 삭제 (Delete)
+  async function deleteTodo(id) {
+    try {
+      await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
+      todos = todos.filter((t) => t._id !== id);
+      render();
+    } catch (e) {
+      console.error('할 일 삭제 실패 ❌', e);
+    }
+  }
+
+  // ✅ 할 일 수정 (제목 변경)
+  async function updateTodoText(id, text) {
+    try {
+      const res = await fetch(`${API_URL}/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: text }),
+      });
+      const updated = await res.json();
+      todos = todos.map((t) => (t._id === id ? updated : t));
+      render();
+    } catch (e) {
+      console.error('할 일 수정 실패 ❌', e);
+    }
+  }
+
+  // ✅ 렌더링
   function render() {
     list.innerHTML = '';
-    for (const [id, todo] of Object.entries(todos)) {
+    for (const todo of todos) {
       const li = document.createElement('li');
       li.className = 'todo-item';
-      li.dataset.id = id;
+      li.dataset.id = todo._id;
 
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.className = 'todo-item__checkbox';
-      checkbox.checked = todo.completed;
-      checkbox.addEventListener('change', () => toggleTodo(id, checkbox.checked));
+      checkbox.checked = todo.isCompleted;
+      checkbox.addEventListener('change', () => toggleTodo(todo._id, checkbox.checked));
 
       const textSpan = document.createElement('span');
-      textSpan.className = 'todo-item__text' + (todo.completed ? ' completed' : '');
-      textSpan.textContent = todo.text;
-      textSpan.addEventListener('dblclick', () => beginEdit(li, id, todo));
+      textSpan.className = 'todo-item__text' + (todo.isCompleted ? ' completed' : '');
+      textSpan.textContent = todo.title;
+
+      textSpan.addEventListener('dblclick', () => beginEdit(li, todo));
 
       const actions = document.createElement('div');
       actions.className = 'todo-item__actions';
@@ -61,13 +109,13 @@ const db = getDatabase(app);
       editBtn.type = 'button';
       editBtn.className = 'btn';
       editBtn.textContent = '수정';
-      editBtn.addEventListener('click', () => beginEdit(li, id, todo));
+      editBtn.addEventListener('click', () => beginEdit(li, todo));
 
       const delBtn = document.createElement('button');
       delBtn.type = 'button';
       delBtn.className = 'btn btn--danger';
       delBtn.textContent = '삭제';
-      delBtn.addEventListener('click', () => deleteTodo(id));
+      delBtn.addEventListener('click', () => deleteTodo(todo._id));
 
       actions.append(editBtn, delBtn);
       li.append(checkbox, textSpan, actions);
@@ -75,38 +123,14 @@ const db = getDatabase(app);
     }
   }
 
-  function addTodo(text) {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    const now = Date.now();
-    const todo = {
-      text: trimmed,
-      completed: false,
-      createdAt: now,
-      updatedAt: now,
-    };
-    const todoRef = push(ref(db, 'todos'));
-    set(todoRef, todo);
-  }
-
-  function deleteTodo(id) {
-    remove(ref(db, 'todos/' + id));
-  }
-
-  function toggleTodo(id, completed) {
-    update(ref(db, 'todos/' + id), {
-      completed,
-      updatedAt: Date.now(),
-    });
-  }
-
-  function beginEdit(li, id, todo) {
+  // ✅ 수정 모드
+  function beginEdit(li, todo) {
     const current = li.querySelector('.todo-item__text');
     if (!current) return;
     const inputEdit = document.createElement('input');
     inputEdit.type = 'text';
     inputEdit.className = 'todo-edit';
-    inputEdit.value = todo.text;
+    inputEdit.value = todo.title;
     li.replaceChild(inputEdit, current);
     inputEdit.focus();
     inputEdit.selectionStart = inputEdit.value.length;
@@ -118,13 +142,10 @@ const db = getDatabase(app);
       }
       const next = inputEdit.value.trim();
       if (!next) {
-        deleteTodo(id);
+        deleteTodo(todo._id);
         return;
       }
-      update(ref(db, 'todos/' + id), {
-        text: next,
-        updatedAt: Date.now(),
-      });
+      updateTodoText(todo._id, next);
     };
 
     inputEdit.addEventListener('keydown', (e) => {
@@ -134,15 +155,15 @@ const db = getDatabase(app);
     inputEdit.addEventListener('blur', () => finish(true));
   }
 
-  // Firebase Realtime Database에서 값 읽기
-  onValue(ref(db, 'todos'), (snapshot) => {
-    todos = snapshot.val() || {};
-    render();
-  });
-
+  // ✅ 폼 이벤트
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    addTodo(input.value);
+    const text = input.value.trim();
+    if (!text) return;
+    addTodo(text);
     input.value = '';
   });
+
+  // 초기화
+  loadTodos();
 })();
